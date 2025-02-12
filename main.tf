@@ -25,38 +25,47 @@ data "aws_ami" "ubuntu" {
 }
 
 # Create a VPC
-resource "aws_vpc" "main" {
-  cidr_block = "10.0.0.0/16"
-
-  tags = {
-    Name = "MainVPC"
+data "aws_vpc" "simret-vpc" {
+  filter {
+    name   = "vpc-id"
+    values = ["vpc-09ff3f1f44ab93d60"]
   }
 }
+data "aws_subnet" "simret-subnet" {
+  filter {
+    name   = "subnet-id"
+    values = ["subnet-04905723d888d2bf7"]
+  } # Use the VPC ID from the VPC data block
+
+}
+
+  
+
 
 # Create a security group in the created VPC
 resource "aws_security_group" "allow_tls" {
   name        = "allow_tls"
-  description = "Allow TLS inbound traffic and all outbound traffic"
-  vpc_id      = aws_vpc.main.id
+  description = "Allow TLS and SSH inbound traffic and all outbound traffic"
+  vpc_id      = data.aws_vpc.simret-vpc.id
 
   tags = {
     Name = "allow_tls"
   }
 }
 
-# Ingress rule to allow TLS traffic (port 443) from within the VPC
+# Ingress rule to allow TLS traffic (port 443)
 resource "aws_vpc_security_group_ingress_rule" "allow_tls_ipv4" {
   security_group_id = aws_security_group.allow_tls.id
-  cidr_ipv4         = aws_vpc.main.cidr_block
+  cidr_ipv4         = data.aws_vpc.simret-vpc.cidr_block
   from_port         = 443
   ip_protocol       = "tcp"
   to_port           = 443
 }
 
-# Ingress rule to allow SSH traffic (port 22) from within the VPC
+# Ingress rule to allow SSH traffic (port 22)
 resource "aws_vpc_security_group_ingress_rule" "allow_ssh_ipv4" {
   security_group_id = aws_security_group.allow_tls.id
-  cidr_ipv4         = aws_vpc.main.cidr_block
+  cidr_ipv4         = data.aws_vpc.simret-vpc.cidr_block
   from_port         = 22
   ip_protocol       = "tcp"
   to_port           = 22
@@ -66,11 +75,19 @@ resource "aws_vpc_security_group_ingress_rule" "allow_ssh_ipv4" {
 resource "aws_instance" "web" {
   ami           = data.aws_ami.ubuntu.id
   instance_type = "t3.micro"
+  subnet_id              = data.aws_subnet.simret-subnet.id
 
-  # Attach the security group to the EC2 instance
-  security_groups = [aws_security_group.allow_tls.name]
+  # Attach the security group to the EC2 instance using its ID
+  vpc_security_group_ids = [aws_security_group.allow_tls.id]
 
   tags = {
-    Name = "HelloWorld"
+    Name = "var.instance_tags"
+
   }
+  key_name= var.key_name
+
+  # Ensure the EC2 instance is created after the security group is created
+
+  
+  user_data = "${file("userdata.sh")}"
 }
